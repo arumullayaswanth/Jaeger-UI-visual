@@ -2,11 +2,8 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /src
 
-COPY go.mod ./
-RUN go mod download
-
 COPY . .
-RUN go mod tidy
+RUN go mod tidy && go mod download
 
 ENV CGO_ENABLED=0
 RUN go build -trimpath -ldflags="-s -w" -o /out/otel-sample-app ./main.go
