@@ -178,23 +178,23 @@ kubectl get pods -n kube-system | grep ebs-csi
 
 This project has placeholder values. Replace them before deployment.
 
-Update these files:
+Update these files: Important
+- `manifests/app/deployment.yaml`  // replace the ECR app image in **manifests/app/deployment.yaml**  
+- `manifests/ingress/ingress.yaml`
 
+not Important
 - `values.yaml`
 - `helm/jaeger-values.yaml`
 - `manifests/elasticsearch/statefulset.yaml`
-- `manifests/app/deployment.yaml`
-- `manifests/app/serviceaccount.yaml`
-- `manifests/otel-collector/serviceaccount.yaml`
-- `manifests/ingress/ingress.yaml`
+
 
 What to change:
 
 - replace `123456789012` with your AWS account ID
 - replace `us-east-1` with your AWS region
-- replace `jaeger.example.com` with your real Jaeger DNS name
-- replace `tracing-demo.example.com` with your real app DNS name
-- replace `arn:aws:acm:...:certificate/replace-me` with your real ACM certificate ARN
+- replace `jaeger.example.com` with your real Jaeger DNS name ***manifests/ingress/ingress.yaml***
+- replace `tracing-demo.example.com` with your real app DNS name ***manifests/ingress/ingress.yaml***
+- replace `arn:aws:acm:...:certificate/replace-me` with your real ACM certificate ARN ***manifests/ingress/ingress.yaml***
 - change EBS volume size in `manifests/elasticsearch/statefulset.yaml` if needed
 - current EBS StorageClass name is `jaeger-elasticsearch-gp2`
 - current EBS volume type is `gp2` in `manifests/elasticsearch/storageclass.yaml`
