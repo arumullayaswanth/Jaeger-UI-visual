@@ -6,6 +6,7 @@ COPY go.mod ./
 RUN go mod download
 
 COPY . .
+RUN go mod tidy
 
 ENV CGO_ENABLED=0
 RUN go build -trimpath -ldflags="-s -w" -o /out/otel-sample-app ./main.go
