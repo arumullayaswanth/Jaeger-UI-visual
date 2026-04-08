@@ -24,10 +24,6 @@ jaeger:
     replicas: 3
     volumeSize: 100Gi
 
-irsa:
-  sampleAppRoleArn: arn:aws:iam::123456789012:role/eks-observability-sample-app
-  otelCollectorRoleArn: arn:aws:iam::123456789012:role/eks-observability-otel-collector
-
 images:
   elasticsearch: docker.elastic.co/elasticsearch/elasticsearch:7.17.24
   otelCollector: otel/opentelemetry-collector-contrib:0.147.0

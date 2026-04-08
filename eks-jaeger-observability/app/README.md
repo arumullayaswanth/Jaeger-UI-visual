@@ -195,7 +195,7 @@ This app is deployed by:
 
 That manifest sets:
 
-- service account and IRSA annotation
+- service account
 - readiness and liveness probes
 - resource requests and limits
 - OTEL environment variables

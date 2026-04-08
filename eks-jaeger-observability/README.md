@@ -12,7 +12,6 @@ The manifests are organized by component so each area can be applied and maintai
 - `ClusterIP` services only for in-cluster traffic
 - ALB Ingress with HTTPS redirection and ACM TLS termination
 - Replica-based workloads, health probes, HPAs, PDBs, and topology spread
-- IRSA-ready service accounts
 - Elasticsearch persistence backed by Amazon EBS
 - Resource requests and limits on every workload
 
@@ -70,7 +69,7 @@ eks-jaeger-observability/
 ## Prerequisites
 
 - An existing production EKS cluster spanning multiple Availability Zones
-- AWS Load Balancer Controller already installed in the cluster with its own IRSA role
+- AWS Load Balancer Controller already installed in the cluster
 - An ACM certificate for the public hostnames
 - Amazon EBS CSI driver installed in the EKS cluster
 - `kubectl`, `helm`, `docker`, and AWS CLI configured
@@ -175,7 +174,6 @@ kubectl -n observability logs deployment/otel-sample-app
 
 ## Recommended Production Hardening
 
-- Replace the placeholder role ARNs with real IRSA roles created for the sample app and any workload that needs AWS APIs.
 - Consider dedicated hot/warm Elasticsearch node groups if your trace retention grows significantly.
 - Restrict ingress CIDRs or change the ALB scheme to `internal` if the Jaeger UI is only for private operators.
 - Add network policies once you know the namespace-to-namespace traffic requirements.

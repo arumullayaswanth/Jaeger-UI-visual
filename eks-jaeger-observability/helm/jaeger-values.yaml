@@ -63,9 +63,6 @@ collector:
     create: true
     automountServiceAccountToken: false
     annotations: {}
-    # Example IRSA annotation if the collector later needs AWS APIs:
-    # annotations:
-    #   eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/eks-observability-jaeger-collector
   podAnnotations:
     cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
   podLabels:
