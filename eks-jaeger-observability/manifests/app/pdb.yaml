@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: otel-sample-app
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: otel-sample-app
+    app.kubernetes.io/part-of: observability
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-sample-app

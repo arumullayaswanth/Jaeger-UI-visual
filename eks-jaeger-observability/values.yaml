@@ -1,0 +1,34 @@
+# Central deployment-time values reference for this stack.
+# These values are not consumed directly by Kubernetes, but they provide
+# a single place to capture the environment-specific settings your CI/CD
+# system should substitute into the manifests and Helm values.
+
+global:
+  clusterName: production-eks
+  namespace: observability
+  awsRegion: us-east-1
+  environment: production
+
+ingress:
+  scheme: internet-facing
+  certificateArn: arn:aws:acm:us-east-1:123456789012:certificate/replace-me
+  jaegerHost: jaeger.example.com
+  appHost: tracing-demo.example.com
+
+jaeger:
+  releaseName: jaeger
+  chartVersion: 3.4.1
+  elasticsearch:
+    endpoint: http://elasticsearch.observability.svc.cluster.local:9200
+    storageClassName: jaeger-elasticsearch-gp2
+    replicas: 3
+    volumeSize: 100Gi
+
+irsa:
+  sampleAppRoleArn: arn:aws:iam::123456789012:role/eks-observability-sample-app
+  otelCollectorRoleArn: arn:aws:iam::123456789012:role/eks-observability-otel-collector
+
+images:
+  elasticsearch: docker.elastic.co/elasticsearch/elasticsearch:7.17.24
+  otelCollector: otel/opentelemetry-collector-contrib:0.147.0
+  sampleApp: 123456789012.dkr.ecr.us-east-1.amazonaws.com/otel-sample-app:1.0.0
