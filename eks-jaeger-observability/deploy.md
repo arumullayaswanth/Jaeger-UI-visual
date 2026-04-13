@@ -436,6 +436,7 @@ kubectl apply -f manifests/elasticsearch/statefulset.yaml
 Check Elasticsearch:
 
 ```bash
+kubectl get sts -A | grep elasticsearch
 kubectl -n observability get svc elasticsearch
 kubectl -n observability get pvc
 kubectl -n observability get pods -l app.kubernetes.io/name=elasticsearch
@@ -458,12 +459,15 @@ helm repo update
 ```
 
 Install Jaeger:
-
+```bash
+cd helm
+```
 ```bash
 helm upgrade --install jaeger jaegertracing/jaeger \
   --namespace observability \
+  --create-namespace \
   --version 3.4.1 \
-  -f helm/jaeger-values.yaml
+  -f jaeger-values.yaml
 ```
 
 Check Jaeger:

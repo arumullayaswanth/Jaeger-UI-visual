@@ -65,9 +65,6 @@ collector:
     annotations: {}
   podAnnotations:
     cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
-  podLabels:
-    app.kubernetes.io/part-of: observability
-    app.kubernetes.io/component: jaeger-collector
   samplingConfig: |
     {
       "service_strategies": [
@@ -119,9 +116,6 @@ query:
     annotations: {}
   podAnnotations:
     cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
-  podLabels:
-    app.kubernetes.io/part-of: observability
-    app.kubernetes.io/component: jaeger-query
   resources:
     requests:
       cpu: 250m
@@ -157,9 +151,6 @@ agent:
     annotations: {}
   podAnnotations:
     cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
-  podLabels:
-    app.kubernetes.io/part-of: observability
-    app.kubernetes.io/component: jaeger-agent
   resources:
     requests:
       cpu: 100m
