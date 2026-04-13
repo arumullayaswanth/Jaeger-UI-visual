@@ -58,6 +58,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: checkout-service-config
+          env:
+            - name: USER
+              value: observability
           ports:
             - name: http
               containerPort: 8080
