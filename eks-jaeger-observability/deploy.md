@@ -221,32 +221,59 @@ Example:
 
 ## Step 6: Log In To ECR
 
-Run:
+Set these values first:
 
 ```bash
-aws ecr get-login-password --region <your-region> | docker login --username AWS --password-stdin <your-account-id>.dkr.ecr.<your-region>.amazonaws.com
+export AWS_REGION=us-east-1
+export AWS_ACCOUNT_ID=123456789012
+```
+
+Check you are using the expected AWS account:
+
+```bash
+aws sts get-caller-identity
+```
+
+Optional: create repositories if they do not exist yet:
+
+```bash
+aws ecr create-repository --repository-name checkout-service --region $AWS_REGION
+aws ecr create-repository --repository-name inventory-service --region $AWS_REGION
+```
+
+Login to ECR:
+
+```bash
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 ```
 
 If this works, Docker can push your images to ECR.
 
 ## Step 7: Build And Push Checkout-Service Image
 
-Run:
+Set checkout image tag:
+
+```bash
+export CHECKOUT_IMAGE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/checkout-service:1.0.0
+```
+
+Build and push:
 
 ```bash
 cd app/checkout-service
-docker build -t <your-checkout-ecr-image> .
-docker push <your-checkout-ecr-image>
+docker build -t $CHECKOUT_IMAGE .
+docker push $CHECKOUT_IMAGE
 cd ../..
 ```
 
-Example:
+Quick verify:
 
 ```bash
-cd app/checkout-service
-docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0 .
-docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0
-cd ../..
+aws ecr describe-images \
+  --repository-name checkout-service \
+  --region $AWS_REGION \
+  --query 'imageDetails[].imageTags' \
+  --output table
 ```
 
 ## Step 8: Build And Push Inventory-Service Image
