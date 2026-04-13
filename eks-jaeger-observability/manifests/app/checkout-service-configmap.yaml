@@ -16,5 +16,6 @@ data:
   OTEL_RESOURCE_ATTRIBUTES: service.name=checkout-service,service.namespace=observability,deployment.environment=production,cloud.provider=aws,cloud.platform=aws_eks
   APP_ENV: production
   GIN_MODE: release
+  USER: observability
   PORT: "8080"
   INVENTORY_SERVICE_URL: http://inventory-service.observability.svc.cluster.local
