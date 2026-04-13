@@ -1,208 +1,272 @@
 # EKS Jaeger Observability Stack
 
-This repository contains a production-oriented distributed tracing setup for AWS EKS using:
+This repository contains a production-style distributed tracing setup for AWS EKS using:
 
 - Jaeger as the trace backend and UI
-- OpenTelemetry Collector as the OTLP gateway
-- AWS Application Load Balancer ingress for north-south access
-- A sample Go microservice instrumented with OpenTelemetry
+- OpenTelemetry Collector as the trace collector and gateway
+- self-hosted Elasticsearch on EKS as Jaeger storage
+- Amazon EBS for Elasticsearch persistence
+- AWS ALB ingress for external access
+- two Go microservices instrumented with OpenTelemetry
 
-The manifests are organized by component so each area can be applied and maintained independently:
+## Current Architecture
 
-- `ClusterIP` services only for in-cluster traffic
-- ALB Ingress with HTTPS redirection and ACM TLS termination
-- Replica-based workloads, health probes, HPAs, PDBs, and topology spread
-- Elasticsearch persistence backed by Amazon EBS
-- Resource requests and limits on every workload
+The active application is now split into 2 microservices:
 
-## Current Structure
+1. `checkout-service`
+   Public service behind ALB ingress.
+2. `inventory-service`
+   Internal service called by `checkout-service`.
 
-- `manifests/base` contains the namespace manifest.
-- `manifests/elasticsearch` contains the self-hosted Elasticsearch cluster and EBS storage class.
-- `manifests/jaeger` contains the optional Grafana datasource and Jaeger-related support files.
-- `manifests/otel-collector` contains the OpenTelemetry Collector resources.
-- `manifests/app` contains the sample application resources.
-- `manifests/ingress` contains the ALB ingress manifest.
-- `manifests/kustomization.yaml` applies the full stack in one command.
+Current trace flow:
 
-## Layout
+1. browser -> `checkout-service`
+2. `checkout-service` -> `inventory-service`
+3. both services -> OpenTelemetry Collector
+4. OpenTelemetry Collector -> Jaeger
+5. Jaeger -> Elasticsearch -> EBS
+
+## What This Repo Includes
+
+- `manifests/base`
+  Namespace manifest.
+
+- `manifests/elasticsearch`
+  Self-hosted Elasticsearch StatefulSet, Service, PDB, and EBS StorageClass.
+
+- `helm/jaeger-values.yaml`
+  Production-style Jaeger Helm values for `collector`, `query`, and `agent`.
+
+- `manifests/otel-collector`
+  OpenTelemetry Collector deployment, RBAC, service, HPA, and config.
+
+- `manifests/app`
+  Kubernetes manifests for both microservices.
+
+- `manifests/ingress`
+  ALB ingress that exposes Jaeger UI and `checkout-service`.
+
+- `app`
+  Two Go services plus shared observability helpers.
+
+- `deploy.md`
+  Full step-by-step deployment and testing guide.
+
+## Current Layout
 
 ```text
 eks-jaeger-observability/
-├── README.md
-├── values.yaml
-├── helm/
-│   └── jaeger-values.yaml
-├── manifests/
-│   ├── namespace.yaml
-│   ├── elasticsearch/
-│   ├── otel-collector/
-│   │   ├── clusterrole.yaml
-│   │   ├── clusterrolebinding.yaml
-│   │   ├── configmap.yaml
-│   │   ├── deployment.yaml
-│   │   ├── hpa.yaml
-│   │   ├── kustomization.yaml
-│   │   ├── pdb.yaml
-│   │   ├── service.yaml
-│   │   └── serviceaccount.yaml
-│   ├── app/
-│   │   ├── configmap.yaml
-│   │   ├── deployment.yaml
-│   │   ├── hpa.yaml
-│   │   ├── kustomization.yaml
-│   │   ├── pdb.yaml
-│   │   ├── service.yaml
-│   │   └── serviceaccount.yaml
-│   ├── ingress.yaml
-│   ├── grafana-datasource-jaeger.yaml
-│   └── iam/
-│       └── sample-app-policy.json
-└── app/
-    ├── .dockerignore
-    ├── Dockerfile
-    ├── go.mod
-    ├── main.go
-    └── package.json      # deprecated placeholder pending deletion after file lock is released
+|-- README.md
+|-- deploy.md
+|-- helm/
+|   `-- jaeger-values.yaml
+|-- app/
+|   |-- .dockerignore
+|   |-- go.mod
+|   |-- README.md
+|   |-- checkout-service/
+|   |   |-- Dockerfile
+|   |   `-- main.go
+|   |-- inventory-service/
+|   |   |-- Dockerfile
+|   |   `-- main.go
+|   `-- internal/
+|       `-- observability/
+|           |-- README.md
+|           `-- telemetry.go
+`-- manifests/
+    |-- base/
+    |   `-- namespace.yaml
+    |-- elasticsearch/
+    |   |-- headless-service.yaml
+    |   |-- pdb.yaml
+    |   |-- service.yaml
+    |   |-- statefulset.yaml
+    |   `-- storageclass.yaml
+    |-- ingress/
+    |   `-- ingress.yaml
+    |-- jaeger/
+    |   `-- grafana-datasource.yaml
+    |-- otel-collector/
+    |   |-- clusterrole.yaml
+    |   |-- clusterrolebinding.yaml
+    |   |-- configmap.yaml
+    |   |-- deployment.yaml
+    |   |-- hpa.yaml
+    |   |-- pdb.yaml
+    |   |-- service.yaml
+    |   `-- serviceaccount.yaml
+    `-- app/
+        |-- checkout-service-configmap.yaml
+        |-- checkout-service-deployment.yaml
+        |-- checkout-service-hpa.yaml
+        |-- checkout-service-pdb.yaml
+        |-- checkout-service-service.yaml
+        |-- inventory-service-configmap.yaml
+        |-- inventory-service-deployment.yaml
+        |-- inventory-service-hpa.yaml
+        |-- inventory-service-pdb.yaml
+        |-- inventory-service-service.yaml
+        `-- microservices-serviceaccount.yaml
 ```
 
 ## Prerequisites
 
-- An existing production EKS cluster spanning multiple Availability Zones
-- AWS Load Balancer Controller already installed in the cluster
-- An ACM certificate for the public hostnames
-- Amazon EBS CSI driver installed in the EKS cluster
-- `kubectl`, `helm`, `docker`, and AWS CLI configured
+You need:
+
+- one working EKS cluster
+- `kubectl` connected to the cluster
+- `helm`
+- Docker
+- AWS CLI configured
+- AWS Load Balancer Controller already installed
+- Amazon EBS CSI driver already installed
+- one ACM certificate in `ISSUED` state
+- two ECR repositories for the app images
+- DNS access for your domain
 
 ## Deployment Order
 
-1. Apply the namespace.
-2. Deploy Elasticsearch with EBS-backed persistence.
-3. Install Jaeger with the pinned Helm values.
-4. Build and push the sample app image to ECR.
-5. Apply the OpenTelemetry Collector, sample app, and ingress manifests.
+Deploy in this order:
 
-## Helm Commands
+1. create namespace
+2. deploy Elasticsearch
+3. install Jaeger with Helm
+4. deploy OpenTelemetry Collector
+5. build and push both microservice images
+6. update image names and ingress placeholders
+7. deploy app manifests
+8. deploy ingress
+9. point DNS to the ALB
+10. test app, logs, and traces
 
-Add the Jaeger chart repository and pin the release to the classic chart that still exposes the requested `collector`, `query`, and `agent` components:
+Use [deploy.md](c:\Users\Yaswanth Reddy\OneDrive - vitap.ac.in\Desktop\Distributed Tracing with Jaeger\eks-jaeger-observability\deploy.md) for the full detailed steps.
 
-```bash
-helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
-helm repo update
-```
+## Main Commands
 
 Create the namespace:
 
 ```bash
-kubectl apply -k manifests/base
+kubectl apply -f manifests/base/namespace.yaml
 ```
 
-Deploy the Elasticsearch storage layer first:
+Deploy Elasticsearch:
 
 ```bash
-kubectl apply -f manifests/elasticsearch/
+kubectl apply -f manifests/elasticsearch/storageclass.yaml
+kubectl apply -f manifests/elasticsearch/headless-service.yaml
+kubectl apply -f manifests/elasticsearch/service.yaml
+kubectl apply -f manifests/elasticsearch/pdb.yaml
+kubectl apply -f manifests/elasticsearch/statefulset.yaml
 ```
 
 Install Jaeger:
 
 ```bash
+helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
+helm repo update
 helm upgrade --install jaeger jaegertracing/jaeger \
   --namespace observability \
   --version 3.4.1 \
   -f helm/jaeger-values.yaml
 ```
 
-Why `3.4.1`:
-
-- The current `jaegertracing/jaeger` chart line has moved toward the v2 single-binary layout.
-- This stack intentionally pins chart `3.4.1` because it cleanly supports the production topology requested here: `collector`, `query`, and `agent`.
-
-## Build And Push The Sample App
-
-Update the image reference in `manifests/app/deployment.yaml`, then build and push:
+Deploy OpenTelemetry Collector:
 
 ```bash
-docker build -t <aws-account-id>.dkr.ecr.<region>.amazonaws.com/otel-sample-app:1.0.0 app
-docker push <aws-account-id>.dkr.ecr.<region>.amazonaws.com/otel-sample-app:1.0.0
+kubectl apply -f manifests/otel-collector/
 ```
 
-## Apply The Remaining Manifests
+Deploy the microservices:
 
 ```bash
-kubectl apply -k manifests
+kubectl apply -f manifests/app/
 ```
 
-Or apply by component:
+Deploy ingress:
 
 ```bash
-kubectl apply -k manifests/otel-collector
-kubectl apply -k manifests/app
-kubectl apply -k manifests/ingress
+kubectl apply -f manifests/ingress/ingress.yaml
 ```
 
-Optional Grafana datasource manifest:
+## Build The Two App Images
+
+Build and push `checkout-service`:
 
 ```bash
-kubectl apply -f manifests/jaeger/grafana-datasource.yaml
+docker build -t <your-checkout-ecr-image> -f app/checkout-service/Dockerfile app
+docker push <your-checkout-ecr-image>
 ```
+
+Build and push `inventory-service`:
+
+```bash
+docker build -t <your-inventory-ecr-image> -f app/inventory-service/Dockerfile app
+docker push <your-inventory-ecr-image>
+```
+
+Before you deploy the app manifests, update:
+
+- `manifests/app/checkout-service-deployment.yaml`
+- `manifests/app/inventory-service-deployment.yaml`
+- `manifests/ingress/ingress.yaml`
 
 ## Verification Commands
 
-Check rollout status:
+Check core workloads:
 
 ```bash
-kubectl -n observability rollout status deployment/otel-collector
-kubectl -n observability rollout status deployment/otel-sample-app
-kubectl -n observability get pods -o wide
+kubectl -n observability get pods
+kubectl -n observability get svc
 kubectl -n observability get hpa
 kubectl -n observability get ingress
 ```
 
-Confirm the Jaeger collector is reachable from inside the cluster:
+Check app rollouts:
 
 ```bash
-kubectl -n observability get svc jaeger-collector
-kubectl -n observability get svc otel-collector
+kubectl -n observability rollout status deployment/checkout-service
+kubectl -n observability rollout status deployment/inventory-service
+kubectl -n observability rollout status deployment/otel-collector
 ```
 
-Inspect logs:
+Check app logs:
 
 ```bash
+kubectl -n observability logs deployment/checkout-service
+kubectl -n observability logs deployment/inventory-service
 kubectl -n observability logs deployment/otel-collector
-kubectl -n observability logs deployment/otel-sample-app
 ```
 
-## Recommended Production Hardening
+## Optional Files
 
-- Consider dedicated hot/warm Elasticsearch node groups if your trace retention grows significantly.
-- Restrict ingress CIDRs or change the ALB scheme to `internal` if the Jaeger UI is only for private operators.
-- Add network policies once you know the namespace-to-namespace traffic requirements.
-- Use Argo CD or Flux for GitOps and keep image tags immutable.
-- Add canary or blue/green deployment controls for the sample app through Argo Rollouts or your service mesh.
+- `manifests/jaeger/grafana-datasource.yaml`
+  Use this only if your Grafana setup supports datasource sidecar loading.
+
+## Production Notes
+
+- all application traffic inside the cluster uses `ClusterIP` services
+- ingress exposes only Jaeger UI and `checkout-service`
+- Jaeger stores traces in self-hosted Elasticsearch
+- Elasticsearch persists data on EBS volumes
+- both microservices use structured JSON logs
+- both microservices export traces to OTel Collector by OTLP HTTP
 
 ## CI/CD Hints
 
-- Lint YAML with `yamllint` and validate manifests with `kubeconform`.
-- Scan images before promotion and sign them with Cosign.
-- Render Helm templates in CI with `helm template` to catch schema drift.
-- Gate production rollout on `kubectl diff`, synthetic trace generation, and a short smoke test against the Jaeger API/UI.
+- run YAML linting before deployment
+- validate Kubernetes manifests with `kubeconform`
+- keep image tags immutable
+- render the Jaeger chart in CI with `helm template`
+- add a smoke test that hits `/work` and checks Jaeger for traces
 
-## Optional Integrations
+## Important Notes
 
-Grafana:
+- this repo does not use OpenSearch now
+- this repo does not require IAM role annotations for the current app flow
+- the active app code is no longer a single service
+- the active services are:
+  - `app/checkout-service`
+  - `app/inventory-service`
 
-- Apply `manifests/jaeger/grafana-datasource.yaml` if your Grafana deployment uses the sidecar datasource loader pattern.
-
-Istio:
-
-- Point Istio mesh tracing to `otel-collector.observability.svc.cluster.local:4317`.
-- Keep application SDK tracing enabled only where you explicitly want business spans beyond Envoy-generated spans.
-
-## Notes
-
-- The sample app exports OTLP traces to the OpenTelemetry Collector over HTTP/protobuf.
-- The OpenTelemetry Collector forwards traces to the Jaeger collector over OTLP gRPC.
-- Jaeger stores spans in self-hosted Elasticsearch running in EKS.
-- Elasticsearch persists trace data on Amazon EBS volumes through the EBS CSI driver.
-- The active sample application is the Go service in `app/main.go`.
-- Some old root-level YAML files remain as redirect stubs because the original files were locked by the editor or OneDrive during this refactor.
+For the app code details, read [app/README.md](c:\Users\Yaswanth Reddy\OneDrive - vitap.ac.in\Desktop\Distributed Tracing with Jaeger\eks-jaeger-observability\app\README.md).

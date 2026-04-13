@@ -1,32 +1,97 @@
 # Deploy Guide
 
-This file shows the full deployment flow in very simple steps.
+## Current Two-Service Deployment
 
-Think of this project like 4 blocks:
+Use this section for the current codebase.
 
-1. Jaeger stores and shows traces.
-2. OpenTelemetry Collector receives traces from apps.
-3. Your Go app sends traces to the collector.
-4. Ingress gives you a browser URL to open the app and Jaeger UI.
+The current app has 2 microservices:
+
+1. `checkout-service`
+   Public service behind ingress.
+2. `inventory-service`
+   Internal service called by `checkout-service`.
+
+Current trace flow:
+
+1. browser -> `checkout-service`
+2. `checkout-service` -> `inventory-service`
+3. both services -> OpenTelemetry Collector
+4. OpenTelemetry Collector -> Jaeger
+5. Jaeger -> Elasticsearch -> EBS
+
+Important:
+
+- this is the active deployment flow
+- this repo uses `Elasticsearch + EBS`
+- this repo does not use OpenSearch
+- this repo does not require IAM role annotations for the current app flow
+
+## Quick Flow
+
+If you want the short version, remember this order:
+
+1. check cluster tools
+2. check ALB controller
+3. check EBS CSI driver
+4. check ACM certificate
+5. build and push 2 images
+6. update app images and ingress values
+7. create namespace
+8. deploy Elasticsearch
+9. install Jaeger
+10. deploy OTel Collector
+11. deploy both microservices
+12. deploy ingress
+13. point DNS to ALB
+14. test app, logs, and traces
 
 ## Before You Start
 
 You need these things ready first:
 
-- an AWS EKS cluster
+- one working AWS EKS cluster
 - `kubectl` working for that cluster
 - `helm` installed
 - Docker installed
-- an ECR repository for the sample app image
-- AWS Load Balancer Controller already installed in EKS
-- an ACM certificate for HTTPS
-- Amazon EBS CSI driver installed in the EKS cluster
+- AWS CLI configured
+- two ECR repositories
+- AWS Load Balancer Controller already installed in EKS, or install it in Step 3
+- one ACM certificate already in `ISSUED` state
+- Amazon EBS CSI driver already installed in the EKS cluster, or install it in Step 4
+- DNS access in Route 53 or another DNS provider
 
+## Step 1: Open The Project Folder
 
-## Step 0: Check AWS Load Balancer Controller
+Run:
 
-This project uses Kubernetes Ingress with AWS ALB.
-So the AWS Load Balancer Controller must exist in your EKS cluster.
+```bash
+cd "c:\Users\Yaswanth Reddy\OneDrive - vitap.ac.in\Desktop\Distributed Tracing with Jaeger\eks-jaeger-observability"
+```
+
+## Step 2: Check The Basic Tools
+
+Run:
+
+```bash
+kubectl config current-context
+kubectl get nodes
+helm version
+docker version
+aws sts get-caller-identity
+```
+
+Good result:
+
+- `kubectl` points to the correct EKS cluster
+- nodes are visible
+- `helm`, `docker`, and `aws` commands work
+
+If one of these fails, fix it first, then continue.
+
+## Step 3: Check AWS Load Balancer Controller
+
+This project uses ALB ingress.
+So the AWS Load Balancer Controller must be running.
 
 Check it:
 
@@ -35,11 +100,22 @@ kubectl get deployment -n kube-system aws-load-balancer-controller
 kubectl get pods -n kube-system | grep aws-load-balancer-controller
 ```
 
+Good result:
+
+- the deployment exists
+- the pods are in `Running` state
+
+If it is not installed, install it first.
+Do not continue with ingress until this is ready.
+
+Set these values first:
+
 ```bash
 export CLUSTER_NAME=my-eks-cluster
 export AWS_REGION=us-east-1
 ```
-Get your VPC ID
+
+Get your VPC ID:
 
 ```bash
 aws eks describe-cluster \
@@ -48,12 +124,16 @@ aws eks describe-cluster \
   --query "cluster.resourcesVpcConfig.vpcId" \
   --output text
 ```
+
 Example output:
-```bash
+
+```text
 vpc-0abc123def456ghi
 ```
-Install the controller with Helm:
-- 👉 Replace <YOUR_VPC_ID> with
+
+Install the controller with Helm.
+
+Replace `<your-vpc-id>` with your real VPC ID:
 
 ```bash
 helm repo add eks https://aws.github.io/eks-charts
@@ -64,93 +144,28 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --set clusterName=$CLUSTER_NAME \
   --set serviceAccount.create=true \
   --set region=$AWS_REGION \
-  --set vpcId=vpc-09346871dbd2503a0
+  --set vpcId=<your-vpc-id>
 ```
 
 Verify again:
 
 ```bash
 kubectl get deployment -n kube-system aws-load-balancer-controller
+kubectl get pods -n kube-system | grep aws-load-balancer-controller
 ```
-Delete EKS ALB Controller
-- Delete Helm Release (MAIN step)
+
+If you ever want to remove it later:
+
 ```bash
 helm uninstall aws-load-balancer-controller -n kube-system
-```
-- Verify Cleanup
-```bash
 kubectl get deployment -n kube-system aws-load-balancer-controller
 kubectl get pods -n kube-system | grep aws-load-balancer-controller
 ```
 
+## Step 4: Check Amazon EBS CSI Driver
 
-
-## Step 0.1: Create Or Check ACM Certificate For HTTPS
-
-Your ALB Ingress uses HTTPS, so you need an ACM certificate.
-
-Example:
-
-- domain: `mydomain.com`
-- Jaeger: `jaeger.mydomain.com`
-- app: `tracing-demo.mydomain.com`
-
-Request a public certificate:
-
-```bash
-aws acm request-certificate \
-  --region us-east-1 \
-  --domain-name jaeger.mydomain.com \
-  --subject-alternative-names tracing-demo.mydomain.com \
-  --validation-method DNS
-```
-
-This command returns a certificate ARN.
-
-Check the certificate:
-
-```bash
-aws acm list-certificates --region us-east-1
-```
-
-Describe it:
-
-```bash
-aws acm describe-certificate \
-  --region us-east-1 \
-  --certificate-arn <your-certificate-arn>
-```
-
-Important:
-
-- complete DNS validation in Route 53 or your DNS provider
-- wait until ACM certificate status becomes `ISSUED`
-- then put that certificate ARN in `manifests/ingress/ingress.yaml`
-
-In this file:
-
-- `manifests/ingress/ingress.yaml`
-
-Change:
-
-```yaml
-alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:123456789012:certificate/replace-me
-```
-
-To your real ACM certificate ARN.
-
-## Step 1: Open The Project Folder
-
-Run:
-
-```bash
-cd "c:\Users\Yaswanth Reddy\OneDrive - vitap.ac.in\Desktop\Distributed Tracing with Jaeger\eks-jaeger-observability"
-```
-
-## Step 0.2: Check Amazon EBS CSI Driver
-
-Elasticsearch will store data on EBS volumes.
-So the EBS CSI driver must exist in your cluster.
+Elasticsearch stores data on EBS.
+So the EBS CSI driver must be running.
 
 Check it:
 
@@ -158,68 +173,202 @@ Check it:
 kubectl get pods -n kube-system | grep ebs-csi
 ```
 
-If it is not installed, install it:
+Good result:
+
+- EBS CSI controller pods are running
+- EBS CSI node pods are running
+
+If it is missing, install it:
 
 ```bash
 eksctl create addon \
   --name aws-ebs-csi-driver \
-  --cluster $CLUSTER_NAME \
-  --region $AWS_REGION \
+  --cluster <your-cluster-name> \
+  --region <your-region> \
   --force
 ```
 
-Verify:
+Verify again:
 
 ```bash
 kubectl get pods -n kube-system | grep ebs-csi
 ```
 
-## Step 2: Change The Fake Values
+## Step 5: Check The ACM Certificate
 
-This project has placeholder values. Replace them before deployment.
+Your ingress uses HTTPS.
+So the certificate must already exist and be in `ISSUED` state.
 
-Update these files: Important
-- `manifests/app/deployment.yaml`  // replace the ECR app image in **manifests/app/deployment.yaml**  
-- `manifests/ingress/ingress.yaml`
-
-not Important
-- `values.yaml`
-- `helm/jaeger-values.yaml`
-- `manifests/elasticsearch/statefulset.yaml`
-
-
-What to change:
-
-- replace `123456789012` with your AWS account ID
-- replace `us-east-1` with your AWS region
-- replace `jaeger.example.com` with your real Jaeger DNS name ***manifests/ingress/ingress.yaml***
-- replace `tracing-demo.example.com` with your real app DNS name ***manifests/ingress/ingress.yaml***
-- replace `arn:aws:acm:...:certificate/replace-me` with your real ACM certificate ARN ***manifests/ingress/ingress.yaml***
-- change EBS volume size in `manifests/elasticsearch/statefulset.yaml` if needed
-- current EBS StorageClass name is `jaeger-elasticsearch-gp2`
-- current EBS volume type is `gp2` in `manifests/elasticsearch/storageclass.yaml`
-- replace the ECR app image in `manifests/app/deployment.yaml`
-
-Easy example:
-
-- if your real domain is `mydomain.com`
-- then use `jaeger.mydomain.com` for Jaeger
-- and use `tracing-demo.mydomain.com` for the sample app
-
-## Step 3: Build The Go App Image
-
-From the project root:
+Check it:
 
 ```bash
-docker build -t <aws-account-id>.dkr.ecr.<region>.amazonaws.com/otel-sample-app:1.0.0 app
-docker push <aws-account-id>.dkr.ecr.<region>.amazonaws.com/otel-sample-app:1.0.0
+aws acm list-certificates --region <your-region>
+aws acm describe-certificate \
+  --region <your-region> \
+  --certificate-arn <your-acm-certificate-arn>
 ```
 
-After pushing the image, make sure the same image tag is present in:
+Good result:
 
-`manifests/app/deployment.yaml`
+- certificate status is `ISSUED`
+- the certificate includes your Jaeger domain
+- the certificate includes your app domain
 
-## Step 4: Create The Namespace
+Example:
+
+- Jaeger domain: `jaeger.mydomain.com`
+- app domain: `tracing-demo.mydomain.com`
+
+## Step 6: Log In To ECR
+
+Run:
+
+```bash
+aws ecr get-login-password --region <your-region> | docker login --username AWS --password-stdin <your-account-id>.dkr.ecr.<your-region>.amazonaws.com
+```
+
+If this works, Docker can push your images to ECR.
+
+## Step 7: Build And Push Checkout-Service Image
+
+Run:
+
+```bash
+docker build -t <your-checkout-ecr-image> -f app/checkout-service/Dockerfile app
+docker push <your-checkout-ecr-image>
+```
+
+Example:
+
+```bash
+docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0 -f app/checkout-service/Dockerfile app
+docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0
+```
+
+## Step 8: Build And Push Inventory-Service Image
+
+Run:
+
+```bash
+docker build -t <your-inventory-ecr-image> -f app/inventory-service/Dockerfile app
+docker push <your-inventory-ecr-image>
+```
+
+Example:
+
+```bash
+docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/inventory-service:1.0.0 -f app/inventory-service/Dockerfile app
+docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/inventory-service:1.0.0
+```
+
+## Step 9: Update The Files Before Deployment
+
+You must update these files before you deploy:
+
+1. `manifests/app/checkout-service-deployment.yaml`
+2. `manifests/app/inventory-service-deployment.yaml`
+3. `manifests/ingress/ingress.yaml`
+
+### Step 9.1: Update Checkout Image
+
+Open:
+
+`manifests/app/checkout-service-deployment.yaml`
+
+Replace:
+
+```yaml
+image: "<your-checkout-ecr-image>"
+```
+
+With your real image.
+
+Example:
+
+```yaml
+image: "123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0"
+```
+
+### Step 9.2: Update Inventory Image
+
+Open:
+
+`manifests/app/inventory-service-deployment.yaml`
+
+Replace:
+
+```yaml
+image: "<your-inventory-ecr-image>"
+```
+
+With your real image.
+
+Example:
+
+```yaml
+image: "123456789012.dkr.ecr.us-east-1.amazonaws.com/inventory-service:1.0.0"
+```
+
+### Step 9.3: Update Ingress Values
+
+Open:
+
+`manifests/ingress/ingress.yaml`
+
+Replace:
+
+```yaml
+alb.ingress.kubernetes.io/certificate-arn: "<your-acm-certificate-arn>"
+```
+
+Replace:
+
+```yaml
+- host: "<your-jaeger-domain>"
+```
+
+Replace:
+
+```yaml
+- host: "<your-app-domain>"
+```
+
+Example:
+
+```yaml
+alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:123456789012:certificate/abcd-1234"
+```
+
+```yaml
+- host: "jaeger.mydomain.com"
+```
+
+```yaml
+- host: "tracing-demo.mydomain.com"
+```
+
+## Step 10: Optional Elasticsearch Size Change
+
+If you want to change storage size, update:
+
+`manifests/elasticsearch/statefulset.yaml`
+
+Look for:
+
+```yaml
+resources:
+  requests:
+    storage: 100Gi
+```
+
+Change it only if you need to.
+
+Current storage settings:
+
+- StorageClass name: `jaeger-elasticsearch-gp2`
+- EBS type: `gp2`
+
+## Step 11: Create The Namespace
 
 Run:
 
@@ -233,11 +382,13 @@ Check:
 kubectl get ns observability
 ```
 
-You should see the `observability` namespace.
+Good result:
 
-## Step 5: Deploy Elasticsearch With EBS
+- `observability` namespace exists
 
-Run:
+## Step 12: Deploy Elasticsearch
+
+Apply these files in this exact order:
 
 ```bash
 kubectl apply -f manifests/elasticsearch/storageclass.yaml
@@ -247,34 +398,24 @@ kubectl apply -f manifests/elasticsearch/pdb.yaml
 kubectl apply -f manifests/elasticsearch/statefulset.yaml
 ```
 
-Check:
+Check Elasticsearch:
 
 ```bash
-kubectl -n observability get pods -l app.kubernetes.io/name=elasticsearch
-kubectl -n observability get pvc
 kubectl -n observability get svc elasticsearch
+kubectl -n observability get pvc
+kubectl -n observability get pods -l app.kubernetes.io/name=elasticsearch
 ```
 
-Wait until all Elasticsearch pods are `Running`.
+Wait until:
 
-Note:
+- the PVCs are `Bound`
+- Elasticsearch pods are `Running`
 
-- this setup currently uses EBS `gp2`
-- if you want another storage type later, update:
-  - `manifests/elasticsearch/storageclass.yaml`
-  - `manifests/elasticsearch/statefulset.yaml`
+If pods stay in `Pending`, check the EBS CSI driver first.
 
-## Step 5.1: Optional Grafana Jaeger Datasource
+## Step 13: Install Jaeger
 
-Run:
-
-```bash
-kubectl apply -f manifests/jaeger/grafana-datasource.yaml
-```
-
-## Step 6: Install Jaeger With Helm
-
-Add the Helm repo:
+Add the repo:
 
 ```bash
 helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
@@ -284,22 +425,26 @@ helm repo update
 Install Jaeger:
 
 ```bash
-helm upgrade --install jaeger jaegertracing/jaeger ^
-  --namespace observability ^
-  --version 3.4.1 ^
+helm upgrade --install jaeger jaegertracing/jaeger \
+  --namespace observability \
+  --version 3.4.1 \
   -f helm/jaeger-values.yaml
 ```
 
-Check:
+Check Jaeger:
 
 ```bash
 kubectl -n observability get pods
 kubectl -n observability get svc
 ```
 
-You should see Jaeger collector, query, and agent resources.
+Good result:
 
-## Step 7: Deploy The OpenTelemetry Collector
+- Jaeger collector pods are running
+- Jaeger query pods are running
+- Jaeger services are present
+
+## Step 14: Deploy OpenTelemetry Collector
 
 Run:
 
@@ -315,9 +460,12 @@ kubectl -n observability get svc otel-collector
 kubectl -n observability get hpa otel-collector
 ```
 
-The deployment should become ready.
+Good result:
 
-## Step 8: Deploy The Sample App
+- the collector deployment becomes ready
+- the service exists
+
+## Step 15: Deploy Both Microservices
 
 Run:
 
@@ -325,17 +473,28 @@ Run:
 kubectl apply -f manifests/app/
 ```
 
-Check:
+Check the rollout:
 
 ```bash
-kubectl -n observability rollout status deployment/otel-sample-app
-kubectl -n observability get svc otel-sample-app
-kubectl -n observability get hpa otel-sample-app
+kubectl -n observability rollout status deployment/checkout-service
+kubectl -n observability rollout status deployment/inventory-service
 ```
 
-The app should become ready.
+Check services and HPA:
 
-## Step 9: Deploy The Ingress
+```bash
+kubectl -n observability get svc checkout-service
+kubectl -n observability get svc inventory-service
+kubectl -n observability get hpa
+kubectl -n observability get pods -l app.kubernetes.io/component=application
+```
+
+Good result:
+
+- both deployments are ready
+- both services exist
+
+## Step 16: Deploy The Ingress
 
 Run:
 
@@ -347,11 +506,14 @@ Check:
 
 ```bash
 kubectl -n observability get ingress
+kubectl -n observability describe ingress observability-alb
 ```
 
-Wait until the ingress gets an address.
+Wait until the ingress shows an address.
 
-## Step 10: Point DNS To The ALB
+That address is the ALB DNS name.
+
+## Step 17: Point DNS To The ALB
 
 After the ingress is created, get the ALB hostname:
 
@@ -359,147 +521,184 @@ After the ingress is created, get the ALB hostname:
 kubectl -n observability get ingress observability-alb
 ```
 
-Create DNS records:
+Now create DNS records.
 
-- `jaeger.example.com` -> ALB DNS name
-- `tracing-demo.example.com` -> ALB DNS name
+If your real domain is `mydomain.com`, create:
 
-Use your real hostnames, not the example names.
+1. `jaeger.mydomain.com`
+2. `tracing-demo.mydomain.com`
 
-Example:
+In Route 53:
 
-- domain name: `mydomain.com`
-- Jaeger URL: `jaeger.mydomain.com`
-- app URL: `tracing-demo.mydomain.com`
+- create an `A` record for `jaeger`
+- create an `A` record for `tracing-demo`
+- set `Alias = Yes`
+- point both records to the same ALB
 
-If your ALB DNS name is:
-
-```text
-k8s-observability-1234567890.us-east-1.elb.amazonaws.com
-```
-
-Then in Route 53 create:
-
-1. Record for Jaeger
-   Name: `jaeger`
-   Type: `A`
-   Alias: `Yes`
-   Target: `k8s-observability-1234567890.us-east-1.elb.amazonaws.com`
-
-2. Record for app
-   Name: `tracing-demo`
-   Type: `A`
-   Alias: `Yes`
-   Target: `k8s-observability-1234567890.us-east-1.elb.amazonaws.com`
-
-So the final mapping becomes:
+Final result:
 
 - `jaeger.mydomain.com` -> ALB
 - `tracing-demo.mydomain.com` -> ALB
 
-Also make sure you update this file before applying ingress:
+Do not test browser URLs until DNS resolves correctly.
 
-- `manifests/ingress/ingress.yaml`
+## Step 18: First Test Inside The Cluster
 
-Change:
+Before browser testing, first test both services with port-forward.
 
-```yaml
-host: jaeger.example.com
-host: tracing-demo.example.com
+### Step 18.1: Test Checkout-Service
+
+Run:
+
+```bash
+kubectl -n observability port-forward svc/checkout-service 8080:80
 ```
 
-To values like:
+Open another terminal and run:
 
-```yaml
-host: jaeger.mydomain.com
-host: tracing-demo.mydomain.com
+```bash
+curl http://localhost:8080/healthz
+curl http://localhost:8080/readyz
+curl http://localhost:8080/
+curl http://localhost:8080/work
 ```
 
-## Step 11: Access The App
+Expected:
 
-Open in browser:
+- `/healthz` returns `{"status":"ok"}`
+- `/readyz` returns `{"status":"ready"}`
+- `/` returns checkout-service JSON
+- `/work` returns order JSON and includes inventory data
 
-```text
-https://tracing-demo.example.com
+### Step 18.2: Test Inventory-Service
+
+Run:
+
+```bash
+kubectl -n observability port-forward svc/inventory-service 8081:80
 ```
 
-You should get JSON like:
+Open another terminal and run:
 
-```json
-{
-  "message": "Distributed tracing is active",
-  "service": "otel-sample-app",
-  "traceId": "example-trace-id",
-  "syntheticDelayMs": 100
-}
+```bash
+curl http://localhost:8081/healthz
+curl http://localhost:8081/readyz
+curl http://localhost:8081/
+curl http://localhost:8081/reserve
 ```
 
-Also test:
+Expected:
 
-```text
-https://tracing-demo.example.com/work
-https://tracing-demo.example.com/healthz
-https://tracing-demo.example.com/readyz
-```
+- `/healthz` returns `{"status":"ok"}`
+- `/readyz` returns `{"status":"ready"}`
+- `/` returns inventory-service JSON
+- `/reserve` returns reservation JSON
 
-## Step 12: Access Jaeger UI
+If these internal tests fail, fix them before testing the ALB URL.
+
+## Step 19: Test Through The Browser
 
 Open:
 
 ```text
-https://jaeger.example.com
+https://<your-app-domain>/
+https://<your-app-domain>/work
+https://<your-jaeger-domain>/
 ```
 
-In Jaeger UI:
+Expected:
 
-1. choose service `otel-sample-app`
-2. click `Find Traces`
-3. open one trace
+- app root opens
+- app `/work` opens
+- Jaeger UI opens
 
-You should see spans like:
+The most important path is:
 
-- `business.root`
-- `simulate.checkout.flow`
-- `inventory.lookup`
-- `payment.authorization`
+```text
+https://<your-app-domain>/work
+```
 
-## Step 13: Test From Terminal
+Because it creates a distributed trace across both microservices.
+
+## Step 20: Generate More Trace Traffic
 
 Run these commands a few times:
 
 ```bash
-curl https://tracing-demo.example.com/
-curl https://tracing-demo.example.com/work
-curl https://tracing-demo.example.com/work
-curl https://tracing-demo.example.com/work
+curl https://<your-app-domain>/
+curl https://<your-app-domain>/work
+curl https://<your-app-domain>/work
+curl https://<your-app-domain>/work
 ```
 
-This creates traffic so traces appear in Jaeger.
+Why this matters:
 
-## Step 14: Check Logs
+1. request enters `checkout-service`
+2. `checkout-service` calls `inventory-service`
+3. both services send spans to OTel Collector
+4. collector exports traces to Jaeger
+5. Jaeger stores traces in Elasticsearch
 
-App logs:
+## Step 21: Verify Traces In Jaeger
+
+Open:
+
+```text
+https://<your-jaeger-domain>
+```
+
+Then do this:
+
+1. choose service `checkout-service`
+2. click `Find Traces`
+3. open one trace
+4. go back
+5. choose service `inventory-service`
+6. click `Find Traces`
+
+Good result:
+
+- traces exist for both services
+- one request chain shows both services in the same distributed trace
+
+## Step 22: Check Logs
+
+Check checkout-service logs:
 
 ```bash
-kubectl -n observability logs deployment/otel-sample-app
+kubectl -n observability logs deployment/checkout-service
 ```
 
-Collector logs:
+Check inventory-service logs:
+
+```bash
+kubectl -n observability logs deployment/inventory-service
+```
+
+Check collector logs:
 
 ```bash
 kubectl -n observability logs deployment/otel-collector
 ```
 
-Jaeger logs:
+Check Jaeger logs:
 
 ```bash
 kubectl -n observability logs deployment/jaeger-query
 kubectl -n observability logs deployment/jaeger-collector
 ```
 
-## Step 15: If The App Does Not Work
+Good result:
 
-Check pods:
+- app logs are printing JSON logs
+- collector does not show exporter errors
+- Jaeger does not show Elasticsearch storage errors
+
+## Step 23: If Something Does Not Work
+
+Use these commands one by one.
+
+Check all pods:
 
 ```bash
 kubectl -n observability get pods
@@ -511,10 +710,10 @@ Describe the failing pod:
 kubectl -n observability describe pod <pod-name>
 ```
 
-Check ingress:
+Check recent events:
 
 ```bash
-kubectl -n observability describe ingress observability-alb
+kubectl -n observability get events --sort-by=.metadata.creationTimestamp
 ```
 
 Check services:
@@ -523,43 +722,48 @@ Check services:
 kubectl -n observability get svc
 ```
 
-Check if the app can send traces:
+Check ingress:
 
 ```bash
-kubectl -n observability logs deployment/otel-sample-app
-kubectl -n observability logs deployment/otel-collector
+kubectl -n observability describe ingress observability-alb
 ```
 
-## Step 16: Quick Success Checklist
+Check Elasticsearch:
+
+```bash
+kubectl -n observability get pvc
+kubectl -n observability logs -l app.kubernetes.io/name=elasticsearch --tail=100
+```
+
+Most common issues:
+
+- wrong image name or wrong image tag
+- ACM certificate ARN is wrong
+- DNS record is wrong
+- ALB controller is missing
+- EBS CSI driver is missing
+- Elasticsearch is not ready yet
+
+## Step 24: Final Success Checklist
 
 Your deployment is correct when all of these are true:
 
 - namespace `observability` exists
-- Jaeger pods are running
-- OpenTelemetry Collector pods are running
-- sample app pods are running
+- Elasticsearch pods are running
+- Elasticsearch PVCs are bound
+- Jaeger is running
+- OTel Collector is running
+- `checkout-service` is running
+- `inventory-service` is running
 - ingress has an ALB address
-- app URL opens in browser
-- Jaeger URL opens in browser
-- hitting `/work` creates traces
-- you can search `otel-sample-app` in Jaeger
+- DNS points to the ALB
+- `https://<your-app-domain>/work` works
+- Jaeger UI opens
+- traces are visible for both services
 
-## One Simple Deploy Order To Remember
+## Step 25: Full Deploy Commands Together
 
-If you want the shortest memory trick, remember this order:
-
-1. build image
-2. create namespace
-3. deploy Elasticsearch
-4. install Jaeger
-5. deploy collector
-6. deploy app
-7. deploy ingress
-8. open app
-9. open Jaeger
-10. test traces
-
-## Useful Commands Together
+Use this order:
 
 ```bash
 kubectl apply -f manifests/base/namespace.yaml
@@ -568,7 +772,8 @@ kubectl apply -f manifests/elasticsearch/headless-service.yaml
 kubectl apply -f manifests/elasticsearch/service.yaml
 kubectl apply -f manifests/elasticsearch/pdb.yaml
 kubectl apply -f manifests/elasticsearch/statefulset.yaml
-kubectl apply -f manifests/jaeger/grafana-datasource.yaml
+helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
+helm repo update
 helm upgrade --install jaeger jaegertracing/jaeger --namespace observability --version 3.4.1 -f helm/jaeger-values.yaml
 kubectl apply -f manifests/otel-collector/
 kubectl apply -f manifests/app/
@@ -577,14 +782,15 @@ kubectl -n observability get pods
 kubectl -n observability get ingress
 ```
 
-## If You Want To Remove Everything
+## Step 26: Remove Everything Later
+
+If you want to remove this setup later:
 
 ```bash
-helm uninstall jaeger -n observability
 kubectl delete -f manifests/ingress/ingress.yaml
 kubectl delete -f manifests/app/
 kubectl delete -f manifests/otel-collector/
-kubectl delete -f manifests/jaeger/grafana-datasource.yaml
+helm uninstall jaeger -n observability
 kubectl delete -f manifests/elasticsearch/statefulset.yaml
 kubectl delete -f manifests/elasticsearch/pdb.yaml
 kubectl delete -f manifests/elasticsearch/service.yaml

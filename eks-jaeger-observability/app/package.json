@@ -1,5 +1,0 @@
-{
-  "name": "otel-sample-app-deprecated-node-stub",
-  "private": true,
-  "description": "Deprecated placeholder. The active sample app has been migrated to Go. Use go.mod and main.go."
-}

@@ -13,7 +13,7 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/ip-address-type: ipv4
     alb.ingress.kubernetes.io/backend-protocol: HTTP
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:713939171080:certificate/ed35efa4-fac4-4d6e-9890-9b21a974979e                  // update your ACM certificate ARN.
+    alb.ingress.kubernetes.io/certificate-arn: "<your-acm-certificate-arn>"
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/healthcheck-path: /
@@ -22,7 +22,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-    - host: jaeger.aluru.site    // give your domain name
+    - host: "<your-jaeger-domain>"
       http:
         paths:
           - path: /
@@ -32,13 +32,13 @@ spec:
                 name: jaeger-query
                 port:
                   number: 80
-    - host: tracing-demo.aluru.site  // give your domain name
+    - host: "<your-app-domain>"
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: otel-sample-app
+                name: checkout-service
                 port:
                   number: 80

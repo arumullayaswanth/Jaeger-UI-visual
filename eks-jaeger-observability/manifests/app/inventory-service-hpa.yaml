@@ -1,18 +1,18 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: otel-sample-app
+  name: inventory-service
   namespace: observability
   labels:
-    app.kubernetes.io/name: otel-sample-app
+    app.kubernetes.io/name: inventory-service
     app.kubernetes.io/part-of: observability
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: otel-sample-app
-  minReplicas: 3
-  maxReplicas: 10
+    name: inventory-service
+  minReplicas: 2
+  maxReplicas: 6
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0

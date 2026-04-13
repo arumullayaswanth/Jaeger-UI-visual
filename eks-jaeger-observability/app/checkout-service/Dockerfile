@@ -6,13 +6,13 @@ COPY . .
 RUN go mod tidy && go mod download
 
 ENV CGO_ENABLED=0
-RUN go build -trimpath -ldflags="-s -w" -o /out/otel-sample-app ./main.go
+RUN go build -trimpath -ldflags="-s -w" -o /out/checkout-service ./checkout-service/main.go
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
 
-COPY --from=builder /out/otel-sample-app /app/otel-sample-app
+COPY --from=builder /out/checkout-service /app/checkout-service
 
 ENV PORT=8080
 
@@ -20,4 +20,4 @@ EXPOSE 8080
 
 USER nonroot:nonroot
 
-ENTRYPOINT ["/app/otel-sample-app"]
+ENTRYPOINT ["/app/checkout-service"]

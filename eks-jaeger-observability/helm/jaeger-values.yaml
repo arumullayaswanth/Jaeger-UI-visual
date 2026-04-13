@@ -72,7 +72,12 @@ collector:
     {
       "service_strategies": [
         {
-          "service": "otel-sample-app",
+          "service": "checkout-service",
+          "type": "probabilistic",
+          "param": 0.2
+        },
+        {
+          "service": "inventory-service",
           "type": "probabilistic",
           "param": 0.2
         }

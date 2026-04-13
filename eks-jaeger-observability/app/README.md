@@ -1,5 +1,188 @@
 # Go Sample App
 
+## Current Two-Service Layout
+
+The app is now split into 2 Go microservices.
+
+Use this section for the current code.
+
+Services:
+
+1. `checkout-service`
+   Public service. This is the service behind ingress.
+2. `inventory-service`
+   Internal service. `checkout-service` calls this service during `/work`.
+
+Folder layout:
+
+- `checkout-service/main.go`
+  Main code for the public checkout microservice.
+
+- `checkout-service/Dockerfile`
+  Docker build for the checkout microservice.
+
+- `inventory-service/main.go`
+  Main code for the internal inventory microservice.
+
+- `inventory-service/Dockerfile`
+  Docker build for the inventory microservice.
+
+- `internal/observability/telemetry.go`
+  Shared tracing, logger, and request middleware helpers.
+
+- `go.mod`
+  Shared Go module for both services.
+
+Current flow:
+
+1. user calls `checkout-service`
+2. `checkout-service` calls `inventory-service`
+3. both services send traces to OpenTelemetry Collector
+4. OpenTelemetry Collector sends traces to Jaeger
+5. Jaeger stores traces in Elasticsearch
+
+### Checkout Service Endpoints
+
+`GET /healthz`
+
+Returns:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+`GET /readyz`
+
+Returns:
+
+```json
+{
+  "status": "ready"
+}
+```
+
+`GET /`
+
+Returns a small checkout-service response and trace ID.
+
+`GET /work`
+
+This is the main business flow.
+
+What it does:
+
+- starts a checkout span
+- calls `inventory-service`
+- receives reservation data
+- returns one response that contains cross-service trace data
+
+Example:
+
+```json
+{
+  "status": "completed",
+  "service": "checkout-service",
+  "traceId": "example-trace-id",
+  "reservation": {
+    "status": "reserved",
+    "service": "inventory-service",
+    "itemId": "sku-demo-1001",
+    "reservedQty": 2,
+    "availableQty": 18,
+    "warehouse": "warehouse-east-1",
+    "traceId": "example-trace-id"
+  }
+}
+```
+
+### Inventory Service Endpoints
+
+`GET /healthz`
+
+Returns:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+`GET /readyz`
+
+Returns:
+
+```json
+{
+  "status": "ready"
+}
+```
+
+`GET /`
+
+Returns a basic service response.
+
+`GET /reserve`
+
+Returns reservation data used by `checkout-service`.
+
+Example:
+
+```json
+{
+  "status": "reserved",
+  "service": "inventory-service",
+  "itemId": "sku-demo-1001",
+  "reservedQty": 2,
+  "availableQty": 18,
+  "warehouse": "warehouse-east-1",
+  "traceId": "example-trace-id"
+}
+```
+
+### Build Both Services
+
+Build checkout-service:
+
+```bash
+docker build -t <your-checkout-ecr-image> -f checkout-service/Dockerfile .
+```
+
+Build inventory-service:
+
+```bash
+docker build -t <your-inventory-ecr-image> -f inventory-service/Dockerfile .
+```
+
+### Test Both Services Locally
+
+Run checkout-service:
+
+```bash
+go run ./checkout-service
+```
+
+Run inventory-service in another terminal:
+
+```bash
+PORT=8081 go run ./inventory-service
+```
+
+Then test:
+
+```bash
+curl http://localhost:8080/
+curl http://localhost:8080/work
+curl http://localhost:8081/
+curl http://localhost:8081/reserve
+```
+
+Important:
+
+- the older single-service explanation below is now old
+- use this section for the current app structure
+
 This folder contains the sample Go application used to demonstrate distributed tracing with OpenTelemetry and Jaeger on AWS EKS.
 
 ## Purpose
