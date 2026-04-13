@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -53,10 +54,11 @@ func main() {
 
 	tp, err := observability.InitTracerProvider(context.Background(), serviceName, appEnv, logger)
 	if err != nil {
-		logger.Error("failed to initialize OpenTelemetry",
+		logger.Error("failed to initialize OpenTelemetry, continuing with no-op tracer provider",
 			slog.String("error", err.Error()),
 		)
-		os.Exit(1)
+		tp = sdktrace.NewTracerProvider()
+		otel.SetTracerProvider(tp)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

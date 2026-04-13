@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: application
     app.kubernetes.io/part-of: observability
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
@@ -64,11 +64,11 @@ spec:
               protocol: TCP
           resources:
             requests:
-              cpu: 150m
-              memory: 192Mi
+              cpu: 80m
+              memory: 128Mi
             limits:
-              cpu: 400m
-              memory: 384Mi
+              cpu: 250m
+              memory: 256Mi
           readinessProbe:
             httpGet:
               path: /readyz
