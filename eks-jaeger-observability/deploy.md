@@ -499,6 +499,15 @@ kubectl -n observability get svc otel-collector
 kubectl -n observability get hpa otel-collector
 ```
 
+If collector config changed, restart to force new pods with new config:
+
+```bash
+kubectl -n observability rollout restart deployment/otel-collector
+kubectl -n observability rollout status deployment/otel-collector --timeout=180s
+kubectl -n observability get pods -l app.kubernetes.io/name=otel-collector
+kubectl -n observability logs deployment/otel-collector --tail=120
+```
+
 Good result:
 
 - the collector deployment becomes ready
