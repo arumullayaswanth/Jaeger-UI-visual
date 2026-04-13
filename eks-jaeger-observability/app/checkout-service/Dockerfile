@@ -6,7 +6,7 @@ COPY . .
 RUN go mod tidy && go mod download
 
 ENV CGO_ENABLED=0
-RUN go build -trimpath -ldflags="-s -w" -o /out/checkout-service ./checkout-service/main.go
+RUN go build -trimpath -ldflags="-s -w" -o /out/checkout-service ./main.go
 
 FROM gcr.io/distroless/static-debian12:nonroot
 

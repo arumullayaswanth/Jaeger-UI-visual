@@ -66,9 +66,11 @@ eks-jaeger-observability/
 |   |-- README.md
 |   |-- checkout-service/
 |   |   |-- Dockerfile
+|   |   |-- go.mod
 |   |   `-- main.go
 |   |-- inventory-service/
 |   |   |-- Dockerfile
+|   |   |-- go.mod
 |   |   `-- main.go
 |   `-- internal/
 |       `-- observability/
@@ -194,15 +196,19 @@ kubectl apply -f manifests/ingress/ingress.yaml
 Build and push `checkout-service`:
 
 ```bash
-docker build -t <your-checkout-ecr-image> -f app/checkout-service/Dockerfile app
+cd app/checkout-service
+docker build -t <your-checkout-ecr-image> .
 docker push <your-checkout-ecr-image>
+cd ../..
 ```
 
 Build and push `inventory-service`:
 
 ```bash
-docker build -t <your-inventory-ecr-image> -f app/inventory-service/Dockerfile app
+cd app/inventory-service
+docker build -t <your-inventory-ecr-image> .
 docker push <your-inventory-ecr-image>
+cd ../..
 ```
 
 Before you deploy the app manifests, update:

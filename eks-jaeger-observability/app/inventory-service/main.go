@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"otel-sample-app/internal/observability"
+	"inventory-service/internal/observability"
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"

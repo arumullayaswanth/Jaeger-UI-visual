@@ -21,11 +21,17 @@ Folder layout:
 - `checkout-service/Dockerfile`
   Docker build for the checkout microservice.
 
+- `checkout-service/go.mod`
+  Go module file used when building checkout-service directly from its folder.
+
 - `inventory-service/main.go`
   Main code for the internal inventory microservice.
 
 - `inventory-service/Dockerfile`
   Docker build for the inventory microservice.
+
+- `inventory-service/go.mod`
+  Go module file used when building inventory-service directly from its folder.
 
 - `internal/observability/telemetry.go`
   Shared tracing, logger, and request middleware helpers.
@@ -146,13 +152,17 @@ Example:
 Build checkout-service:
 
 ```bash
-docker build -t <your-checkout-ecr-image> -f checkout-service/Dockerfile .
+cd checkout-service
+docker build -t <your-checkout-ecr-image> .
+cd ..
 ```
 
 Build inventory-service:
 
 ```bash
-docker build -t <your-inventory-ecr-image> -f inventory-service/Dockerfile .
+cd inventory-service
+docker build -t <your-inventory-ecr-image> .
+cd ..
 ```
 
 ### Test Both Services Locally

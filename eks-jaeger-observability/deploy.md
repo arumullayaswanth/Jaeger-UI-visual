@@ -111,7 +111,7 @@ Do not continue with ingress until this is ready.
 Set these values first:
 
 ```bash
-export CLUSTER_NAME=my-eks-cluster
+export CLUSTER_NAME=eksprod
 export AWS_REGION=us-east-1
 ```
 
@@ -154,7 +154,7 @@ kubectl get deployment -n kube-system aws-load-balancer-controller
 kubectl get pods -n kube-system | grep aws-load-balancer-controller
 ```
 
-If you ever want to remove it later:
+Delete EKS ALB Controller
 
 ```bash
 helm uninstall aws-load-balancer-controller -n kube-system
@@ -234,15 +234,19 @@ If this works, Docker can push your images to ECR.
 Run:
 
 ```bash
-docker build -t <your-checkout-ecr-image> -f app/checkout-service/Dockerfile app
+cd app/checkout-service
+docker build -t <your-checkout-ecr-image> .
 docker push <your-checkout-ecr-image>
+cd ../..
 ```
 
 Example:
 
 ```bash
-docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0 -f app/checkout-service/Dockerfile app
+cd app/checkout-service
+docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0 .
 docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0
+cd ../..
 ```
 
 ## Step 8: Build And Push Inventory-Service Image
@@ -250,15 +254,19 @@ docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/checkout-service:1.0.0
 Run:
 
 ```bash
-docker build -t <your-inventory-ecr-image> -f app/inventory-service/Dockerfile app
+cd app/inventory-service
+docker build -t <your-inventory-ecr-image> .
 docker push <your-inventory-ecr-image>
+cd ../..
 ```
 
 Example:
 
 ```bash
-docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/inventory-service:1.0.0 -f app/inventory-service/Dockerfile app
+cd app/inventory-service
+docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/inventory-service:1.0.0 .
 docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/inventory-service:1.0.0
+cd ../..
 ```
 
 ## Step 9: Update The Files Before Deployment
